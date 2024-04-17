@@ -15,11 +15,11 @@ A [pseudocode file](supplementary/pseudocode.c), written in C-like syntax is sup
 
 ## Presentation Frontend : Canvas (default)
 
-``./videos/tr_canvas.mp4``
+https://github.com/Abrar11050/raw-wasm-tetris/assets/11440342/b7268e48-1a46-4a98-b306-b8ef3978c0af
 
 ## Presentation Frontend : ASCII
 
-``./videos/tr_ascii.mp4``
+https://github.com/Abrar11050/raw-wasm-tetris/assets/11440342/25e29470-2869-4a22-b5d9-cea32359c98e
 
 ## Building and Running
 
