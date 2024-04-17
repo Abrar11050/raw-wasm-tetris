@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<title>Wasmtris - ASCII</title>
+<style>
+    html {
+        width: 100%;
+        height: 100%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background-color: #121212;
+    }
+
+    @keyframes glow-border-kf {
+        0% { box-shadow: 0 0 0 0 #eaeaea; }
+
+        100% { box-shadow: 0 0 0 10px rgba(0, 0, 0, 0); }
+    }
+
+    .glow-border-anim {
+        animation: glow-border-kf 1s infinite;
+    }
+
+    #ascii {
+        font-size: 26px;
+        background-color: black;
+        color: white;
+        font-family: 'Courier New', Courier, monospace;
+        font-weight: bold;
+    }
+
+    .c0 { color: cyan; }
+    .c1 { color: yellow; }
+    .c2 { color: blue; }
+    .c3 { color: darkorange; }
+    .c4 { color: lime; }
+    .c5 { color: purple; }
+    .c6 { color: red; }
+    .c7 { color: gray; }
+
+    nav > a {
+        text-decoration: none;
+        font-size: 24px;
+        font-family: 'Courier New', Courier, monospace;
+        font-weight: bold;
+    }
+
+    nav > a:visited {
+        text-decoration: none;
+    }
+</style>
+<nav>
+    <a href="./index.html" style="color: #38cdff;">Canvas</a>&nbsp;
+    <a href="./ascii.html" style="color: #3e3e3e;">ASCII</a>
+</nav>
+<div id="ascii" style="width: 660px; height: 600px; border: 1px solid black;"></div>
+
+<script type="module">
+    const colText = (txt, idx) => `<span class="c${idx}">${txt}</span>`;
+
+    class CoalescingList {
+        constructor() {
+            this.list = [];
+        }
+
+        pushSquare(colIdx) {
+            if(this.list.length > 0) {
+                const last = this.list[this.list.length - 1];
+                if(last.span && last.colIdx === colIdx) {
+                    last.rep += 1;
+                } else {
+                    this.list.push({ span: true, rep: 1, colIdx });
+                }
+            } else {
+                this.list.push({ span: true, rep: 1, colIdx });
+            }
+        }
+
+        pushSpace() {
+            if(this.list.length > 0) {
+                const last = this.list[this.list.length - 1];
+                if(!last.span) {
+                    last.rep += 1;
+                } else {
+                    this.list.push({ span: false, rep: 1 });
+                }
+            } else {
+                this.list.push({ span: false, rep: 1 });
+            }
+        }
+
+        join(str) {
+            return this.list.map(val => {
+                if(val.span) {
+                    return colText("[]".repeat(val.rep), val.colIdx);
+                } else {
+                    return "&nbsp;&nbsp;".repeat(val.rep);
+                }
+            }).join(str);
+        }
+    }
+
+    const ascii = document.getElementById("ascii");
+
+    const GRID_WIDTH  = 10; // in cell units
+    const GRID_HEIGHT = 20; // in cell units
+
+    const WASM_URL = "tetris.wasm";
+
+    const memory = new WebAssembly.Memory({ initial: 1 }); // 64kb
+    const buffer = new Uint8ClampedArray(memory.buffer);
+
+
+    function onDraw(drawboardPtr, upnextPtr, score, gameOver) {
+
+        ascii.innerHTML = "";
+
+        let index;
+
+        const SP1 = "&nbsp;";
+        const SP2 = "&nbsp;&nbsp;";
+        
+        const boardLines = new Array(GRID_HEIGHT).fill("");
+        const infoLines  = new Array(GRID_HEIGHT).fill("");
+        
+        index = drawboardPtr;
+        for (let y = 0; y < GRID_HEIGHT; y++) {
+            const rst = new CoalescingList();
+            for (let x = 0; x < GRID_WIDTH; x++) {
+                const color = buffer[index++];
+                if(color) {
+                    rst.pushSquare(color - 1);
+                } else {
+                    rst.pushSpace();
+                }
+            }
+            boardLines[y] = rst.join("");
+        }
+
+        const LEFT_PAD  = (GRID_WIDTH - 4) / 2 | 0;
+        index = upnextPtr;
+        for (let y = 0; y < 4; y++) {
+            const rst = new CoalescingList();
+            for (let x = 0; x < 4; x++) {
+                const color = buffer[index++];
+                if(color) {
+                    rst.pushSquare(color - 1);
+                } else {
+                    rst.pushSpace();
+                }
+            }
+            infoLines[y + 6] = SP2.repeat(LEFT_PAD) + rst.join("");
+        }
+
+        infoLines[16] = new Array((LEFT_PAD + 4) * 2).fill(SP1).join("") + String(score);
+
+        ascii.innerHTML = boardLines.map((val, idx) => {
+            return val + colText("||", 7) + infoLines[idx];
+        }).join("<br>");
+    }
+
+    const wasmModule = await WebAssembly.instantiateStreaming(fetch(WASM_URL), {
+        env: {
+            memory,
+            GRID_WIDTH,
+            GRID_HEIGHT,
+            random() { return Math.random(); },
+            onDraw
+        }
+    });
+
+    const exports = wasmModule.instance.exports;
+
+    let paused = false;
+
+    window.addEventListener("keydown", e => {
+        switch (e.keyCode) {
+            case 37: // left arrow
+                if(!paused) { exports.moveLeft(); }
+            break;
+
+            case 39: // right arrow
+                if(!paused) { exports.moveRight(); }
+            break;
+
+            case 40: // down arrow
+                if(!paused) { exports.moveDown(); }
+            break;
+
+            case 32: // space
+                if(!paused) { exports.rotate(); }
+            break;
+
+            case 82: // R key
+                paused = false;
+                exports.reset();
+            break;
+
+            case 80: // P key
+                paused = !paused;
+                if(paused) {
+                    ascii.className = "glow-border-anim";
+                } else {
+                    ascii.className = "";
+                }
+            break;
+
+            default: break;
+        }
+    });
+
+    window.setInterval(() => {
+        if(!paused) { exports.moveDown(); }
+    }, 1000);
+</script>
+</html>

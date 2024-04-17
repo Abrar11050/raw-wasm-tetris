@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<title>Wasmtris - Canvas</title>
+<style>
+    html {
+        width: 100%;
+        height: 100%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background-color: #121212;
+    }
+
+    @keyframes glow-border-kf {
+        0% { box-shadow: 0 0 0 0 #eaeaea; }
+
+        100% { box-shadow: 0 0 0 10px rgba(0, 0, 0, 0); }
+    }
+
+    .glow-border-anim {
+        animation: glow-border-kf 1s infinite;
+    }
+
+    nav > a {
+        text-decoration: none;
+        font-size: 24px;
+        font-family: 'Courier New', Courier, monospace;
+        font-weight: bold;
+    }
+
+    nav > a:visited {
+        text-decoration: none;
+    }
+</style>
+<nav>
+    <a href="./index.html" style="color: #3e3e3e;">Canvas</a>&nbsp;
+    <a href="./ascii.html" style="color: #38cdff;">ASCII</a>
+</nav>
+<canvas id="canvas" width="600" height="600" style="border: 1px solid black;"></canvas>
+
+<script type="module">
+    const canvas = document.getElementById("canvas");
+    const ctx = canvas.getContext("2d");
+
+    const PALETTE = ["cyan", "yellow", "blue", "darkorange", "lime", "purple", "red"];
+
+    const GRID_WIDTH  = 10; // in cell units
+    const GRID_HEIGHT = 20; // in cell units
+
+    const WASM_URL = "tetris.wasm";
+
+    const memory = new WebAssembly.Memory({ initial: 1 }); // 64kb
+    const buffer = new Uint8ClampedArray(memory.buffer);
+
+    let CELL_SIZE;
+    let PLAYSPACE_X;
+    let PLAYSPACE_Y;
+    let PLAYSPACE_WIDTH;
+    let PLAYSPACE_HEIGHT;
+    let UPNEXT_X;
+    let UPNEXT_Y;
+    let SCORE_X;
+    let SCORE_Y;
+    let FONT_SIZE;
+
+    function calcSizes() {
+        CELL_SIZE = canvas.height / GRID_HEIGHT;
+
+        PLAYSPACE_X = canvas.width - (CELL_SIZE * GRID_WIDTH);
+        PLAYSPACE_Y = 0;
+
+        PLAYSPACE_WIDTH  = canvas.width - PLAYSPACE_X;
+        PLAYSPACE_HEIGHT = canvas.height;
+
+        const INFOSPACE_WIDTH  = canvas.width - PLAYSPACE_X;
+        const INFOSPACE_HEIGHT = canvas.height;
+
+        const UPNEXT_WIDTH  = 4 * CELL_SIZE;
+        const UPNEXT_HEIGHT = 4 * CELL_SIZE;
+
+        UPNEXT_X = (INFOSPACE_WIDTH - UPNEXT_WIDTH) / 2;
+        UPNEXT_Y = (INFOSPACE_HEIGHT / 3) - (UPNEXT_HEIGHT / 2);
+
+        SCORE_X = INFOSPACE_WIDTH / 2;
+        SCORE_Y = (INFOSPACE_HEIGHT / 3) * 2;
+
+        FONT_SIZE = 24 * (INFOSPACE_HEIGHT / 400) | 0;
+    }
+
+    function drawSquare(offsetX, offsetY, x, y, colorIndex, gameOver) {
+        ctx.fillStyle = gameOver ? "#232323" : PALETTE[colorIndex - 1];
+        ctx.beginPath();
+        ctx.rect(
+            offsetX + (x * CELL_SIZE + 1),
+            offsetY + (y * CELL_SIZE + 1),
+            CELL_SIZE - 1,
+            CELL_SIZE - 1
+        );
+        ctx.fill();
+    }
+
+    function onDraw(drawboardPtr, upnextPtr, score, gameOver) {
+        calcSizes();
+
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+        ctx.fillStyle = "black";
+
+        ctx.beginPath();
+        ctx.rect(0, 0, canvas.width, canvas.height);
+        ctx.fill();
+
+        let index;
+
+        index = drawboardPtr;
+
+        for (let y = 0; y < GRID_HEIGHT; y++) {
+            for (let x = 0; x < GRID_WIDTH; x++) {
+                const color = buffer[index++];
+                if(color) {
+                    drawSquare(PLAYSPACE_X, PLAYSPACE_Y, x, y, color, gameOver);
+                }
+            }
+        }
+
+        index = upnextPtr;
+
+        for (let y = 0; y < 4; y++) {
+            for (let x = 0; x < 4; x++) {
+                const color = buffer[index++];
+                if(color) {
+                    drawSquare(UPNEXT_X, UPNEXT_Y, x, y, color, gameOver);
+                }
+            }
+        }
+
+        ctx.strokeStyle = "white";
+        ctx.strokeWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(PLAYSPACE_X, PLAYSPACE_Y);
+        ctx.lineTo(PLAYSPACE_X, PLAYSPACE_Y + PLAYSPACE_HEIGHT);
+        ctx.stroke();
+
+        ctx.font = `${FONT_SIZE}px consolas`;
+        ctx.textAlign = "center";
+        ctx.fillStyle = "white";
+        ctx.fillText(String(score), SCORE_X, SCORE_Y);
+    }
+
+    const wasmModule = await WebAssembly.instantiateStreaming(fetch(WASM_URL), {
+        env: {
+            memory,
+            GRID_WIDTH,
+            GRID_HEIGHT,
+            random() { return Math.random(); },
+            onDraw
+        }
+    });
+
+    const exports = wasmModule.instance.exports;
+
+    let paused = false;
+
+    window.addEventListener("keydown", e => {
+        switch (e.keyCode) {
+            case 37: // left arrow
+                if(!paused) { exports.moveLeft(); }
+            break;
+
+            case 39: // right arrow
+                if(!paused) { exports.moveRight(); }
+            break;
+
+            case 40: // down arrow
+                if(!paused) { exports.moveDown(); }
+            break;
+
+            case 32: // space
+                if(!paused) { exports.rotate(); }
+            break;
+
+            case 82: // R key
+                paused = false;
+                exports.reset();
+            break;
+
+            case 80: // P key
+                paused = !paused;
+                if(paused) {
+                    canvas.className = "glow-border-anim";
+                } else {
+                    canvas.className = "";
+                }
+            break;
+
+            default: break;
+        }
+    });
+
+    window.setInterval(() => {
+        if(!paused) { exports.moveDown(); }
+    }, 1000);
+</script>
+</html>
